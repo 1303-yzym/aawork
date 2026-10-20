@@ -100,8 +100,74 @@ UDP 5353。程序优先在 5353 上加入多播组；若绑定失败（权限被
 
 回退模式下无法监听其他主机主动发送的多播通告，只能看到对本次查询的应答。
 
-## Run
+## 本地运行
 
 ```powershell
 go run . -cidr 192.168.1.0/24 -ports 80-8080
 ```
+
+## Docker 部署
+
+镜像为多阶段构建，产物约 13 MB，运行阶段基于 `alpine`，以非 root 用户（UID 10001）
+运行，无 shell、无包管理器依赖。
+
+### 构建
+
+```powershell
+docker build -t aawork:local .
+```
+
+### 运行（单次扫描）
+
+```powershell
+docker run --rm --network host aawork:local `
+  -cidr 192.168.1.0/24 `
+  -ports 80,443,445,548,5000 `
+  -timeout 2s
+```
+
+### 使用 Docker Compose
+
+```powershell
+$env:CIDR  = '192.168.1.0/24'
+$env:PORTS = '1-1024'
+docker compose run --rm aawork
+```
+
+可用环境变量：
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `CIDR` | `192.168.1.0/24` | 目标网段 |
+| `PORTS` | `1-1024` | 端口或端口范围 |
+| `TIMEOUT` | `2s` | mDNS 窗口与单连接超时 |
+| `SCAN_TIMEOUT` | `0s` | 整轮扫描预算，`0` 表示不限 |
+| `FORMAT` | `text` | `text` 或 `json` |
+
+### 容器内离线验证数据集
+
+```powershell
+docker compose --profile replay run --rm replay
+```
+
+或直接挂载目录：
+
+```powershell
+docker run --rm -v "${PWD}:/data:ro" aawork:local `
+  -cidr 192.168.1.0/24 -ports 9,445,548,5000 `
+  -fixture /data/testdata/reference-mdns.hex
+```
+
+### 网络说明（重要）
+
+mDNS 依赖二层多播，必须使用 `--network host`（或 `network_mode: host`）：
+
+- **Linux 主机**：`host` 网络直接使用宿主机网卡，mDNS 与 TCP 扫描均正常。
+- **Docker Desktop（Windows / macOS）**：`host` 网络指向的是 Docker 的 Linux 虚拟机，
+  不是物理网卡。TCP 扫描仍可通过 NAT 访问局域网（已验证可发现宿主机端口并抓取
+  banner），但 **mDNS 多播收不到局域网应答**，此时应改用数据集回放，或把程序直接
+  跑在宿主机上。默认 `bridge` 网络下同样收不到 mDNS。
+
+容器不需要 `NET_ADMIN` 或 `NET_RAW`，也不需要 root：多播加入和大于 1024 的端口绑定
+在普通用户下即可完成。Compose 文件已启用 `read_only`、`cap_drop: [ALL]` 与
+`no-new-privileges`。

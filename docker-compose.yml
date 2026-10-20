@@ -1,0 +1,49 @@
+services:
+  aawork:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: aawork:local
+    container_name: aawork
+    # Host networking is required for mDNS multicast. On Linux this exposes the
+    # real LAN interfaces; on Docker Desktop (Windows/macOS) "host" is the VM,
+    # so only TCP scanning works there.
+    network_mode: host
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+    command:
+      - -cidr
+      - ${CIDR:-192.168.1.0/24}
+      - -ports
+      - ${PORTS:-1-1024}
+      - -timeout
+      - ${TIMEOUT:-2s}
+      - -scan-timeout
+      - ${SCAN_TIMEOUT:-0s}
+      - -format
+      - ${FORMAT:-text}
+
+  replay:
+    profiles: ["replay"]
+    image: aawork:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ./testdata:/data:ro
+    command:
+      - -cidr
+      - 192.168.1.0/24
+      - -ports
+      - 9,445,548,5000
+      - -fixture
+      - /data/reference-mdns.hex

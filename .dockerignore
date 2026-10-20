@@ -1,0 +1,10 @@
+.git
+.gitignore
+.vscode
+.idea
+*.exe
+aawork
+Dockerfile
+.dockerignore
+docker-compose.yml
+README.md
