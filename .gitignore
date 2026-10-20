@@ -1,0 +1,11 @@
+# Build output
+/aawork.exe
+/aawork
+
+# Test and coverage output
+*.test
+coverage.out
+
+# IDE settings
+.vscode/
+.idea/
