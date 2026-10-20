@@ -1,0 +1,48 @@
+services:
+9/tcp workstation:
+Name=slw-nas [24:5e:be:69:a3:13]
+IPv4=192.168.1.10
+IPv6=fe80::265e:beff:fe69:a313
+Hostname=slw-nas.local
+TTL=10
+5000/tcp http:
+Name=slw-nas
+IPv4=192.168.1.10
+IPv6=fe80::265e:beff:fe69:a313
+Hostname=slw-nas.local
+TTL=10
+path=/
+445/tcp smb:
+Name=slw-nas
+IPv4=192.168.1.10
+IPv6=fe80::265e:beff:fe69:a313
+Hostname=slw-nas.local
+TTL=10
+5000/tcp qdiscover:
+Name=slw-nas
+IPv4=192.168.1.10
+IPv6=fe80::265e:beff:fe69:a313
+Hostname=slw-nas.local
+TTL=10
+accessType=https,accessPort=86,model=TS-X64,displayModel=TS-464C,fwVer=5.2.9,fwBuildNum=20260214
+device-info:
+Name=slw-nas(AFP)
+IPv4=192.168.1.10
+IPv6=fe80::265e:beff:fe69:a313
+Hostname=slw-nas.local
+TTL=10
+model=Xserve
+548/tcp afpovertcp:
+Name=slw-nas(AFP)
+IPv4=192.168.1.10
+IPv6=fe80::265e:beff:fe69:a313
+Hostname=slw-nas.local
+TTL=10
+answers:
+PTR:
+_workstation._tcp.local
+_http._tcp.local
+_smb._tcp.local
+_qdiscover._tcp.local
+_device-info._tcp.local
+_afpovertcp._tcp.local
