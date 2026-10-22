@@ -1,5 +1,15 @@
 package main
 
+// DNS resource record types the discovery pipeline understands
+// (RFC 1035, RFC 2782).
+const (
+	typeA    uint16 = 1
+	typePTR  uint16 = 12
+	typeTXT  uint16 = 16
+	typeAAAA uint16 = 28
+	typeSRV  uint16 = 33
+)
+
 type Asset struct {
 	IP         string            `json:"ip"`
 	Port       int               `json:"port"`

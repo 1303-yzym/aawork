@@ -7,14 +7,27 @@ import (
 )
 
 func buildAssets(results []mdnsResult, network *net.IPNet, ports []int) []Asset {
-	hosts := map[string]*hostData{}
+	records := flattenRecords(results)
+	hosts := indexHosts(records)
+	assets := buildServiceAssets(records, hosts, ports)
+	assets = buildDeviceInfoAssets(records, hosts, assets)
+	sortDiscoveredAssets(assets)
+	return assets
+}
+
+func flattenRecords(results []mdnsResult) []dnsRecord {
 	var records []dnsRecord
-	var assets []Asset
 	for _, result := range results {
 		records = append(records, result.Records...)
 	}
+	return records
+}
+
+// indexHosts maps every A/AAAA owner name to the addresses it advertises.
+func indexHosts(records []dnsRecord) map[string]*hostData {
+	hosts := map[string]*hostData{}
 	for _, record := range records {
-		if record.Type != 1 && record.Type != 28 {
+		if record.Type != typeA && record.Type != typeAAAA {
 			continue
 		}
 		key := strings.ToLower(strings.TrimSuffix(record.Name, "."))
@@ -24,14 +37,21 @@ func buildAssets(results []mdnsResult, network *net.IPNet, ports []int) []Asset 
 			hosts[key] = host
 		}
 		host.ttl = record.TTL
-		if record.Type == 1 {
+		if record.Type == typeA {
 			host.ipv4 = appendUnique(host.ipv4, record.Value)
 		} else {
 			host.ipv6 = appendUnique(host.ipv6, record.Value)
 		}
 	}
+	return hosts
+}
+
+// buildServiceAssets creates one asset per SRV record whose target host was
+// resolved and whose port is part of the scan.
+func buildServiceAssets(records []dnsRecord, hosts map[string]*hostData, ports []int) []Asset {
+	var assets []Asset
 	for _, record := range records {
-		if record.Type != 33 || len(record.Value) == 0 {
+		if record.Type != typeSRV || len(record.Value) == 0 {
 			continue
 		}
 		target := strings.ToLower(strings.TrimSuffix(record.Value, "."))
@@ -67,8 +87,14 @@ func buildAssets(results []mdnsResult, network *net.IPNet, ports []int) []Asset 
 		}
 		assets = appendUniqueAsset(assets, asset)
 	}
+	return assets
+}
+
+// buildDeviceInfoAssets adds the portless device-info entries, which are
+// published as PTR plus TXT without an SRV record.
+func buildDeviceInfoAssets(records []dnsRecord, hosts map[string]*hostData, assets []Asset) []Asset {
 	for _, record := range records {
-		if record.Type != 12 || !strings.Contains(strings.ToLower(record.Name), "_device-info.") {
+		if record.Type != typePTR || !strings.Contains(strings.ToLower(record.Name), "_device-info.") {
 			continue
 		}
 		serviceName := strings.TrimSuffix(record.Value, ".")
@@ -86,6 +112,10 @@ func buildAssets(results []mdnsResult, network *net.IPNet, ports []int) []Asset 
 			TTL: host.ttl, TXT: txt,
 		})
 	}
+	return assets
+}
+
+func sortDiscoveredAssets(assets []Asset) {
 	sort.SliceStable(assets, func(i, j int) bool {
 		if assets[i].IP != assets[j].IP {
 			return assets[i].IP < assets[j].IP
@@ -99,7 +129,6 @@ func buildAssets(results []mdnsResult, network *net.IPNet, ports []int) []Asset 
 		}
 		return assets[i].Name < assets[j].Name
 	})
-	return assets
 }
 
 // referenceServiceOrder keeps text output stable and matches the documented
@@ -133,7 +162,7 @@ func mergeTXTForInstance(records []dnsRecord, instance, target string) map[strin
 	service := serviceType(instance)
 	base := strings.ToLower(strings.TrimSuffix(instanceName(instance, service), "."))
 	for _, record := range records {
-		if record.Type != 16 {
+		if record.Type != typeTXT {
 			continue
 		}
 		name := strings.ToLower(strings.TrimSuffix(record.Name, "."))
@@ -200,29 +229,11 @@ func findHostByInstance(hosts map[string]*hostData, instance string) *hostData {
 	return nil
 }
 
-func findIPForName(records []dnsRecord, name string, network *net.IPNet) string {
-	for _, record := range records {
-		if (record.Type == 1 || record.Type == 28) && strings.EqualFold(record.Name, name) && network.Contains(net.ParseIP(record.Value)) {
-			return record.Value
-		}
-	}
-	return ""
-}
-
 func findIPv4ForName(records []dnsRecord, name string, network *net.IPNet) string {
 	for _, record := range records {
-		if record.Type == 1 && strings.EqualFold(record.Name, name) && network.Contains(net.ParseIP(record.Value)) {
+		if record.Type == typeA && strings.EqualFold(record.Name, name) && network.Contains(net.ParseIP(record.Value)) {
 			return record.Value
 		}
 	}
 	return ""
-}
-
-func findTXT(records []dnsRecord, name string) map[string]string {
-	for _, record := range records {
-		if record.Type == 16 && strings.EqualFold(record.Name, name) {
-			return record.TXT
-		}
-	}
-	return nil
 }

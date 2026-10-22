@@ -93,7 +93,7 @@ func (q *mdnsSocket) run(ctx context.Context, timeout time.Duration) (mdnsResult
 	queryServices := func(records []dnsRecord) error {
 		var extra []string
 		for _, record := range records {
-			if record.Type == 12 && strings.HasPrefix(record.Value, "_") {
+			if record.Type == typePTR && strings.HasPrefix(record.Value, "_") {
 				service := strings.ToLower(record.Value)
 				if !queried[service] {
 					queried[service] = true

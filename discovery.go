@@ -85,7 +85,7 @@ func collectAnswers(responses []mdnsResult) []string {
 	answers := map[string]bool{}
 	for _, response := range responses {
 		for _, record := range response.Records {
-			if record.Type != 12 || !isServiceType(record.Value) {
+			if record.Type != typePTR || !isServiceType(record.Value) {
 				continue
 			}
 			answers[record.Value] = true

@@ -61,31 +61,31 @@ func parseDNSMessage(packet []byte) ([]dnsRecord, error) {
 		// instance label is user-visible (e.g. "slw-nas(AFP)").
 		record := dnsRecord{Name: name, Type: kind, TTL: ttl}
 		switch kind {
-		case 1:
+		case typeA:
 			if size == 4 {
 				record.Value = net.IP(packet[offset : offset+4]).String()
 			}
-		case 28:
+		case typeAAAA:
 			if size == 16 {
 				record.Value = net.IP(packet[offset : offset+16]).String()
 			}
-		case 12:
+		case typePTR:
 			record.Value, _, err = readName(packet, offset)
-		case 33:
+		case typeSRV:
 			if size >= 6 {
 				record.Port = int(binary.BigEndian.Uint16(packet[offset+4:]))
 				record.Value, _, err = readName(packet, offset+6)
 			}
-		case 16:
+		case typeTXT:
 			record.TXT = parseTXT(packet[offset : offset+size])
 		}
 		if err != nil {
 			return nil, err
 		}
-		if kind == 16 && record.TXT == nil {
+		if kind == typeTXT && record.TXT == nil {
 			record.TXT = map[string]string{}
 		}
-		if kind == 16 || kind == 1 || kind == 28 || kind == 12 || kind == 33 {
+		if kind == typeTXT || kind == typeA || kind == typeAAAA || kind == typePTR || kind == typeSRV {
 			records = append(records, record)
 		}
 		offset += size
