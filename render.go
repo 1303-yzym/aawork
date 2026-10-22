@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 )
@@ -41,7 +42,7 @@ func visibleTXT(asset Asset) ([]string, map[string]string) {
 	return keys, values
 }
 
-func renderText(output interface{ Write([]byte) (int, error) }, assets []Asset, answers []string, verbose bool, scanErrors ...[]string) error {
+func renderText(output io.Writer, assets []Asset, answers []string, verbose bool, scanErrors []string) error {
 	if _, err := fmt.Fprintln(output, "services:"); err != nil {
 		return err
 	}
@@ -99,7 +100,7 @@ func renderText(output interface{ Write([]byte) (int, error) }, assets []Asset, 
 		}
 	}
 	if len(scanErrors) > 0 {
-		for _, scanError := range scanErrors[0] {
+		for _, scanError := range scanErrors {
 			fmt.Fprintln(output, "error:", scanError)
 		}
 	}

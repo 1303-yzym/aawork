@@ -12,7 +12,7 @@ func TestRenderTextIncludesDeepFields(t *testing.T) {
 		IP: "192.168.1.10", Port: 5000, Service: "qdiscover",
 		Name: "slw-nas", Hostname: "slw-nas.local", TTL: 10,
 		TXT: map[string]string{"model": "TS-464C"},
-	}}, []string{"_qdiscover._tcp.local"}, true)
+	}}, []string{"_qdiscover._tcp.local"}, true, nil)
 	if err != nil {
 		t.Fatalf("renderText returned error: %v", err)
 	}
@@ -43,7 +43,7 @@ func TestJSONIncludesStableAssetFields(t *testing.T) {
 
 func TestRenderTextGroupsPTRAnswers(t *testing.T) {
 	var output strings.Builder
-	if err := renderText(&output, nil, []string{"_http._tcp.local", "_smb._tcp.local"}, false); err != nil {
+	if err := renderText(&output, nil, []string{"_http._tcp.local", "_smb._tcp.local"}, false, nil); err != nil {
 		t.Fatal(err)
 	}
 	want := "answers:\nPTR:\n_http._tcp.local\n_smb._tcp.local\n"

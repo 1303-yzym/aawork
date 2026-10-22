@@ -23,9 +23,9 @@ func scanHosts(network *net.IPNet) ([]string, error) {
 	return enumerateHosts(network), nil
 }
 
-// scanNetwork streams host/port targets into a bounded worker pool instead of
-// materialising every pair, so /24 x 1-10000 does not exhaust memory. mDNS
-// assets only enrich a target; they never gate the scan.
+// scanNetwork streams host/port targets into the shared bounded probe pool
+// instead of materialising every pair, so /24 x 1-10000 does not exhaust
+// memory. mDNS assets only enrich a target; they never gate the scan.
 func scanNetwork(ctx context.Context, discovered []Asset, network *net.IPNet, ports []int, timeout time.Duration) ([]Asset, error) {
 	hosts, err := scanHosts(network)
 	if err != nil {

@@ -38,7 +38,7 @@ func TestOfflineMDNSFixtureAssociatesServicesAndTXT(t *testing.T) {
 		t.Fatalf("identity was not aggregated: %#v", afp)
 	}
 	var out strings.Builder
-	if err := renderText(&out, assets, []string{"_afpovertcp._tcp.local"}, true); err != nil {
+	if err := renderText(&out, assets, []string{"_afpovertcp._tcp.local"}, true, nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"548/tcp afpovertcp:", "IP=192.168.10.5", "device=NAS"} {
@@ -76,7 +76,7 @@ func TestReferenceFixtureGolden(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out strings.Builder
-	if err := renderText(&out, result.Services, result.Answers, false); err != nil {
+	if err := renderText(&out, result.Services, result.Answers, false, nil); err != nil {
 		t.Fatal(err)
 	}
 	got := strings.ReplaceAll(out.String(), "\r\n", "\n")
@@ -122,7 +122,7 @@ func TestReferenceDatasetBlockOutput(t *testing.T) {
 	responses := []mdnsResult{{Records: loadReferenceRecords(t)}}
 	assets := buildAssets(responses, referenceNetwork(t), []int{9, 445, 548, 5000})
 	var out strings.Builder
-	if err := renderText(&out, assets, collectAnswers(responses), false); err != nil {
+	if err := renderText(&out, assets, collectAnswers(responses), false, nil); err != nil {
 		t.Fatal(err)
 	}
 	got := out.String()
