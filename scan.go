@@ -7,7 +7,6 @@ import (
 	"net"
 	"sort"
 	"strconv"
-	"sync"
 	"time"
 )
 
@@ -43,62 +42,32 @@ func scanNetwork(ctx context.Context, discovered []Asset, network *net.IPNet, po
 		discoveredByTarget[key] = appendUniqueAsset(discoveredByTarget[key], asset)
 	}
 
-	workers := 128
-	jobs := make(chan Asset)
-	results := make(chan Asset)
-	var wg sync.WaitGroup
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for asset := range jobs {
-				probeAsset(ctx, &asset, timeout)
-				if !asset.Discovered && (asset.Probe == nil || !asset.Probe.Success) {
-					continue
-				}
-				select {
-				case results <- asset:
-				case <-ctx.Done():
-					return
-				}
-			}
-		}()
-	}
-	go func() {
-		defer close(jobs)
-		for _, host := range hosts {
-			for _, port := range ports {
-				if ctx.Err() != nil {
-					return
-				}
-				var targets []Asset
-				if known, ok := discoveredByTarget[targetKey(host, port)]; ok {
-					targets = known
-				} else {
-					targets = []Asset{{IP: host, Host: host, Port: port, Service: serviceForPort(port)}}
-				}
-				for _, asset := range targets {
-					// Never block forever if every worker already returned
-					// after cancellation.
-					select {
-					case jobs <- asset:
-					case <-ctx.Done():
+	probed := runProbePool(ctx,
+		func(ctx context.Context, jobs chan<- Asset) {
+			for _, host := range hosts {
+				for _, port := range ports {
+					if ctx.Err() != nil {
 						return
+					}
+					targets, ok := discoveredByTarget[targetKey(host, port)]
+					if !ok {
+						targets = []Asset{{IP: host, Host: host, Port: port, Service: serviceForPort(port)}}
+					}
+					for _, asset := range targets {
+						// Never block forever if every worker already returned
+						// after cancellation.
+						select {
+						case jobs <- asset:
+						case <-ctx.Done():
+							return
+						}
 					}
 				}
 			}
-		}
-	}()
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	assets := passthrough
-	for asset := range results {
-		assets = append(assets, asset)
-	}
-	return assets, nil
+		},
+		func(asset *Asset) { probeAsset(ctx, asset, timeout) },
+	)
+	return append(passthrough, probed...), nil
 }
 
 func targetKey(ip string, port int) string {

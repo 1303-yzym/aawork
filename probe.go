@@ -13,44 +13,67 @@ import (
 	"time"
 )
 
+const probeWorkers = 128
+
+// probeAssets probes an in-memory batch and returns the reportable results.
 func probeAssets(ctx context.Context, assets []Asset, timeout time.Duration) []Asset {
-	workers := 128
-	if len(assets) < workers {
-		workers = len(assets)
-	}
-	if workers == 0 {
+	if len(assets) == 0 {
 		return nil
 	}
-	jobs := make(chan *Asset)
+	return runProbePool(ctx,
+		func(ctx context.Context, jobs chan<- Asset) {
+			for i := range assets {
+				select {
+				case jobs <- assets[i]:
+				case <-ctx.Done():
+					return
+				}
+			}
+		},
+		func(asset *Asset) { probeAsset(ctx, asset, timeout) },
+	)
+}
+
+// runProbePool feeds targets produced by next into a bounded worker pool and
+// returns the probed assets that are worth reporting.
+func runProbePool(ctx context.Context, next func(context.Context, chan<- Asset), probe func(*Asset)) []Asset {
+	jobs := make(chan Asset)
+	results := make(chan Asset)
 	var wg sync.WaitGroup
-	for i := 0; i < workers; i++ {
+	for i := 0; i < probeWorkers; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for asset := range jobs {
-				probeAsset(ctx, asset, timeout)
+				probe(&asset)
+				if !keepProbedAsset(asset) {
+					continue
+				}
+				select {
+				case results <- asset:
+				case <-ctx.Done():
+					return
+				}
 			}
 		}()
 	}
-send:
-	for i := range assets {
-		select {
-		case jobs <- &assets[i]:
-		case <-ctx.Done():
-			break send
-		}
+	go func() {
+		defer close(jobs)
+		next(ctx, jobs)
+	}()
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+	var assets []Asset
+	for asset := range results {
+		assets = append(assets, asset)
 	}
-	close(jobs)
-	wg.Wait()
-	open := assets[:0]
-	for _, asset := range assets {
-		if asset.Discovered {
-			open = append(open, asset)
-		} else if asset.Probe != nil && asset.Probe.Success {
-			open = append(open, asset)
-		}
-	}
-	return open
+	return assets
+}
+
+func keepProbedAsset(asset Asset) bool {
+	return asset.Discovered || (asset.Probe != nil && asset.Probe.Success)
 }
 
 func probeAsset(ctx context.Context, asset *Asset, timeout time.Duration) {
