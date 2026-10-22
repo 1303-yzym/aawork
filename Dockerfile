@@ -6,7 +6,7 @@ WORKDIR /src
 COPY go.mod ./
 RUN go mod download
 
-COPY main.go ./
+COPY *.go ./
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/aawork .
 
 FROM alpine:3.20

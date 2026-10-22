@@ -4,6 +4,28 @@
 A 和 AAAA），同时会对 CIDR 中的每个 IPv4/IPv6 主机和指定端口执行受控并发 TCP
 扫描；因此没有 mDNS 响应时也能发现开放端口。
 
+## 项目结构
+
+所有 `.go` 文件同属 `main` 包，按职责分文件；`main.go` 只保留进程入口，
+不含业务逻辑。测试文件按同样的边界拆分，`testdata/` 相对路径保持不变。
+
+| 文件 | 职责 |
+|---|---|
+| `main.go` | 进程入口：调用参数解析并映射退出码 |
+| `cli.go` | `Options`、flag 注册与校验、端口区间解析 |
+| `model.go` | 领域类型：`Asset`、`ProbeResult`、`ScanOutput`、DNS 记录等 |
+| `discovery.go` | 发现主流程：网卡选择、mDNS 窗口、TCP 扫描编排 |
+| `mdns.go` | 接口级 mDNS 查询套接字与 5353 占用回退 |
+| `dnswire.go` | DNS 报文编解码（查询构造、记录解析、名称压缩） |
+| `names.go` | 服务类型、实例名等 DNS 名称语义 |
+| `assets.go` | 把 mDNS 记录组装为资产，合并 TXT/MAC 信息 |
+| `fixture.go` | 回放录制的 mDNS 报文数据集 |
+| `scan.go` | 主机枚举、CIDR 规模校验、并发端口扫描池 |
+| `probe.go` | 单目标 TCP/TLS 探测与 banner 识别 |
+| `render.go` | 文本输出渲染 |
+| `netutil.go` | 网卡地址与 UDP 地址解析辅助函数 |
+| `util.go` | 通用小工具（去重、取首个非空值等） |
+
 ## 验证数据集（无需真实设备）
 
 `testdata/` 提供了一套可回放的 mDNS 报文数据集，用于验证 banner 识别深度：
