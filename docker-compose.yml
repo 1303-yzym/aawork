@@ -1,10 +1,10 @@
 services:
-  aawork:
+  mdns-go:
     build:
       context: .
       dockerfile: Dockerfile
-    image: aawork:local
-    container_name: aawork
+    image: mdns-go:local
+    container_name: mdns-go
     # Host networking is required for mDNS multicast. On Linux this exposes the
     # real LAN interfaces; on Docker Desktop (Windows/macOS) "host" is the VM,
     # so only TCP scanning works there.
@@ -29,7 +29,7 @@ services:
 
   replay:
     profiles: ["replay"]
-    image: aawork:local
+    image: mdns-go:local
     build:
       context: .
       dockerfile: Dockerfile

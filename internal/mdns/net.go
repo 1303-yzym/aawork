@@ -1,4 +1,4 @@
-package main
+package mdns
 
 import (
 	"errors"
@@ -23,28 +23,20 @@ func interfaceIP(iface *net.Interface, wantV6 bool) net.IP {
 	return nil
 }
 
-func mustResolveUDP(address string) (*net.UDPAddr, error) {
-	resolved, err := net.ResolveUDPAddr("udp4", address)
+func resolveUDP(address string, ipv6 bool, iface *net.Interface) (*net.UDPAddr, error) {
+	network := "udp4"
+	if ipv6 {
+		network = "udp6"
+	}
+	resolved, err := net.ResolveUDPAddr(network, address)
 	if err != nil || resolved == nil {
 		if err == nil {
 			err = errors.New("resolved UDP address is nil")
 		}
 		return nil, fmt.Errorf("resolve UDP address %q: %w", address, err)
 	}
-	return resolved, nil
-}
-
-func mustResolveUDPForNetwork(address string, ipv6 bool, iface *net.Interface) (*net.UDPAddr, error) {
-	if !ipv6 {
-		return mustResolveUDP(address)
+	if ipv6 {
+		resolved.Zone = iface.Name
 	}
-	resolved, err := net.ResolveUDPAddr("udp6", address)
-	if err != nil || resolved == nil {
-		if err == nil {
-			err = errors.New("resolved UDP address is nil")
-		}
-		return nil, fmt.Errorf("resolve UDP address %q: %w", address, err)
-	}
-	resolved.Zone = iface.Name
 	return resolved, nil
 }

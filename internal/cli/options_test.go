@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"errors"
@@ -9,9 +9,9 @@ import (
 )
 
 func TestParsePorts(t *testing.T) {
-	ports, err := parsePorts("80,443,5000-5002,443")
+	ports, err := ParsePorts("80,443,5000-5002,443")
 	if err != nil {
-		t.Fatalf("parsePorts returned error: %v", err)
+		t.Fatalf("ParsePorts returned error: %v", err)
 	}
 	want := []int{80, 443, 5000, 5001, 5002}
 	if len(ports) != len(want) {
@@ -26,16 +26,16 @@ func TestParsePorts(t *testing.T) {
 
 func TestParsePortsRejectsInvalidInput(t *testing.T) {
 	for _, input := range []string{"0", "65536", "5-4", "abc", ""} {
-		if _, err := parsePorts(input); err == nil {
-			t.Errorf("parsePorts(%q) accepted invalid input", input)
+		if _, err := ParsePorts(input); err == nil {
+			t.Errorf("ParsePorts(%q) accepted invalid input", input)
 		}
 	}
 }
 
-func TestParseOptionsReturnsValidatedScope(t *testing.T) {
-	options, network, ports, err := parseOptions([]string{"-cidr", "192.168.1.0/24", "-ports", "9,445"}, io.Discard)
+func TestParseReturnsValidatedScope(t *testing.T) {
+	options, network, ports, err := Parse([]string{"-cidr", "192.168.1.0/24", "-ports", "9,445"}, io.Discard)
 	if err != nil {
-		t.Fatalf("parseOptions returned error: %v", err)
+		t.Fatalf("Parse returned error: %v", err)
 	}
 	if network.String() != "192.168.1.0/24" {
 		t.Errorf("network = %v, want 192.168.1.0/24", network)
@@ -48,21 +48,21 @@ func TestParseOptionsReturnsValidatedScope(t *testing.T) {
 	}
 }
 
-func TestParseOptionsRejectsInvalidScope(t *testing.T) {
+func TestParseRejectsInvalidScope(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		args []string
 		want error
 		text string
 	}{
-		{name: "missing cidr", args: nil, want: errMissingCIDR},
+		{name: "missing cidr", args: nil, want: ErrMissingCIDR},
 		{name: "bad cidr", args: []string{"-cidr", "999.1.1.1/24"}, text: "invalid cidr:"},
 		{name: "bad ports", args: []string{"-cidr", "192.168.1.0/24", "-ports", "0"}, text: "invalid ports:"},
 		{name: "bad format", args: []string{"-cidr", "192.168.1.0/24", "-format", "xml"}, text: "format must be text or json"},
-		{name: "unknown flag", args: []string{"-nope"}, want: errBadUsage},
+		{name: "unknown flag", args: []string{"-nope"}, want: ErrBadUsage},
 		{name: "help", args: []string{"-h"}, want: flag.ErrHelp},
 	} {
-		_, _, _, err := parseOptions(tc.args, io.Discard)
+		_, _, _, err := Parse(tc.args, io.Discard)
 		if tc.want != nil {
 			if !errors.Is(err, tc.want) {
 				t.Errorf("%s: error = %v, want %v", tc.name, err, tc.want)
@@ -71,6 +71,23 @@ func TestParseOptionsRejectsInvalidScope(t *testing.T) {
 		}
 		if err == nil || !strings.HasPrefix(err.Error(), tc.text) {
 			t.Errorf("%s: error = %v, want prefix %q", tc.name, err, tc.text)
+		}
+	}
+}
+
+func TestExitCodeMapping(t *testing.T) {
+	cases := []struct {
+		err  error
+		want int
+	}{
+		{flag.ErrHelp, 0},
+		{ErrMissingCIDR, 2},
+		{ErrBadUsage, 2},
+		{errors.New("invalid cidr: bad"), 1},
+	}
+	for _, tc := range cases {
+		if got := ExitCode(tc.err); got != tc.want {
+			t.Errorf("ExitCode(%v) = %d, want %d", tc.err, got, tc.want)
 		}
 	}
 }

@@ -1,12 +1,17 @@
-package main
+// Package render writes scan results in the documented text format.
+package render
 
 import (
 	"fmt"
 	"io"
 	"sort"
 	"strings"
+
+	"github.com/1303-yzym/mdns-go/internal/model"
 )
 
+// preferredTXTOrder is the field order the reference output documents; any
+// other key follows in alphabetical order.
 var preferredTXTOrder = []string{
 	"path", "accessType", "accessPort", "model", "displayModel",
 	"fwVer", "fwBuildNum", "device",
@@ -14,12 +19,12 @@ var preferredTXTOrder = []string{
 
 // visibleTXT drops values already surfaced elsewhere (the MAC in Name) and
 // returns keys in the stable order used by the reference output.
-func visibleTXT(asset Asset) ([]string, map[string]string) {
+func visibleTXT(asset model.Asset) ([]string, map[string]string) {
 	values := map[string]string{}
 	for key, value := range asset.TXT {
 		// Hide any key that carries a MAC once the address is promoted to
 		// Name/MAC, including when it disagrees with the canonical value.
-		if asset.MAC != "" && isMACKey(key) && normalizeMAC(value) != "" {
+		if asset.MAC != "" && model.IsMACKey(key) && model.NormalizeMAC(value) != "" {
 			continue
 		}
 		values[key] = value
@@ -42,21 +47,22 @@ func visibleTXT(asset Asset) ([]string, map[string]string) {
 	return keys, values
 }
 
-func renderText(output io.Writer, assets []Asset, answers []string, verbose bool, scanErrors []string) error {
+// Text writes the human-readable report.
+func Text(output io.Writer, assets []model.Asset, answers []string, verbose bool, scanErrors []string) error {
 	if _, err := fmt.Fprintln(output, "services:"); err != nil {
 		return err
 	}
 	for _, asset := range assets {
 		if asset.Port == 0 {
-			if _, err := fmt.Fprintf(output, "%s:\n", firstNonEmpty(asset.Service, "tcp")); err != nil {
+			if _, err := fmt.Fprintf(output, "%s:\n", orDefault(asset.Service, "tcp")); err != nil {
 				return err
 			}
-		} else if _, err := fmt.Fprintf(output, "%d/tcp %s:\n", asset.Port, firstNonEmpty(asset.Service, "tcp")); err != nil {
+		} else if _, err := fmt.Fprintf(output, "%d/tcp %s:\n", asset.Port, orDefault(asset.Service, "tcp")); err != nil {
 			return err
 		}
 		if verbose {
 			fmt.Fprintf(output, "IP=%s\n", asset.IP)
-			fmt.Fprintf(output, "Host=%s\n", firstNonEmpty(asset.Host, asset.Hostname, asset.IP))
+			fmt.Fprintf(output, "Host=%s\n", orDefault(asset.Host, asset.Hostname, asset.IP))
 		}
 		fmt.Fprintf(output, "Name=%s\n", asset.Name)
 		fmt.Fprintf(output, "IPv4=%s\n", strings.Join(asset.IPv4, ","))
@@ -78,17 +84,15 @@ func renderText(output io.Writer, assets []Asset, answers []string, verbose bool
 		if asset.Banner != "" {
 			fmt.Fprintf(output, "banner=%q\n", asset.Banner)
 		}
-		if verbose {
-			if asset.Probe != nil {
-				fmt.Fprintf(output, "probe=%s status=%s success=%t\n", asset.Probe.Protocol, asset.Probe.Status, asset.Probe.Success)
-				for _, key := range sortedKeys(asset.Probe.Headers) {
-					fmt.Fprintf(output, "header.%s=%s\n", key, asset.Probe.Headers[key])
-				}
-				if asset.Probe.TLS != nil {
-					fmt.Fprintf(output, "tls.version=%s\n", asset.Probe.TLS.Version)
-					fmt.Fprintf(output, "tls.cipher=%s\n", asset.Probe.TLS.Cipher)
-					fmt.Fprintf(output, "tls.issuer=%s\n", asset.Probe.TLS.Issuer)
-				}
+		if verbose && asset.Probe != nil {
+			fmt.Fprintf(output, "probe=%s status=%s success=%t\n", asset.Probe.Protocol, asset.Probe.Status, asset.Probe.Success)
+			for _, key := range sortedKeys(asset.Probe.Headers) {
+				fmt.Fprintf(output, "header.%s=%s\n", key, asset.Probe.Headers[key])
+			}
+			if asset.Probe.TLS != nil {
+				fmt.Fprintf(output, "tls.version=%s\n", asset.Probe.TLS.Version)
+				fmt.Fprintf(output, "tls.cipher=%s\n", asset.Probe.TLS.Cipher)
+				fmt.Fprintf(output, "tls.issuer=%s\n", asset.Probe.TLS.Issuer)
 			}
 		}
 	}
@@ -99,12 +103,21 @@ func renderText(output io.Writer, assets []Asset, answers []string, verbose bool
 			fmt.Fprintln(output, answer)
 		}
 	}
-	if len(scanErrors) > 0 {
-		for _, scanError := range scanErrors {
-			fmt.Fprintln(output, "error:", scanError)
-		}
+	for _, scanError := range scanErrors {
+		fmt.Fprintln(output, "error:", scanError)
 	}
 	return nil
+}
+
+// orDefault returns the first non-empty value, for fields whose display
+// fallback is a presentation choice rather than data.
+func orDefault(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func sortedKeys(values map[string]string) []string {

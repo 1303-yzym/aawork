@@ -1,15 +1,9 @@
-package main
+// Package model holds the domain types shared by discovery, probing and
+// rendering.
+package model
 
-// DNS resource record types the discovery pipeline understands
-// (RFC 1035, RFC 2782).
-const (
-	typeA    uint16 = 1
-	typePTR  uint16 = 12
-	typeTXT  uint16 = 16
-	typeAAAA uint16 = 28
-	typeSRV  uint16 = 33
-)
-
+// Asset is one reportable service instance: an mDNS answer, an open TCP port,
+// or a merge of both.
 type Asset struct {
 	IP         string            `json:"ip"`
 	Port       int               `json:"port"`
@@ -46,28 +40,10 @@ type TLSInfo struct {
 	NotAfter   string   `json:"not_after,omitempty"`
 }
 
+// ScanOutput is the complete result of one run; it is serialised as-is for
+// -format json.
 type ScanOutput struct {
 	Services []Asset  `json:"services"`
 	Answers  []string `json:"answers,omitempty"`
 	Errors   []string `json:"errors,omitempty"`
-}
-
-type dnsRecord struct {
-	Name, Value string
-	Type        uint16
-	TTL         uint32
-	Port        int
-	TXT         map[string]string
-}
-
-type hostData struct {
-	hostname   string
-	ipv4, ipv6 []string
-	ttl        uint32
-}
-
-type mdnsResult struct {
-	SourceIP string
-	Records  []dnsRecord
-	Err      error
 }

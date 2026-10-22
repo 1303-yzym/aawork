@@ -1,4 +1,6 @@
-package main
+// Package discovery orchestrates mDNS browsing and TCP probing into one
+// reportable set of assets.
+package discovery
 
 import (
 	"context"
@@ -7,29 +9,48 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
+
+	"github.com/1303-yzym/mdns-go/internal/mdns"
+	"github.com/1303-yzym/mdns-go/internal/model"
 )
 
-func discover(ctx context.Context, network *net.IPNet, ports []int, options Options) (ScanOutput, error) {
+// Options bounds one discovery round.
+type Options struct {
+	// Interfaces restricts browsing to one named interface; empty means every
+	// multicast-capable interface.
+	Interfaces string
+	// Timeout bounds the mDNS collection window and each TCP connection.
+	Timeout time.Duration
+	// ScanTimeout is an optional whole-scan budget; zero means each connection
+	// is bounded only by Timeout.
+	ScanTimeout time.Duration
+}
+
+// Discover browses mDNS on the selected interfaces, turns the answers into
+// assets and probes every target over TCP.
+func Discover(ctx context.Context, network *net.IPNet, ports []int, options Options) (model.ScanOutput, error) {
 	interfaces, err := net.Interfaces()
 	if err != nil {
-		return ScanOutput{}, err
+		return model.ScanOutput{}, err
 	}
 	var selected []*net.Interface
 	var candidates []string
 	for i := range interfaces {
-		if interfaces[i].Flags&net.FlagUp != 0 && interfaces[i].Flags&net.FlagMulticast != 0 {
+		up := interfaces[i].Flags&net.FlagUp != 0 && interfaces[i].Flags&net.FlagMulticast != 0
+		if up {
 			candidates = append(candidates, interfaces[i].Name)
 		}
 		if options.Interfaces != "" && interfaces[i].Name != options.Interfaces {
 			continue
 		}
-		if interfaces[i].Flags&net.FlagUp != 0 && interfaces[i].Flags&net.FlagMulticast != 0 {
+		if up {
 			selected = append(selected, &interfaces[i])
 		}
 	}
 	if len(selected) == 0 {
 		if options.Interfaces != "" {
-			return ScanOutput{}, fmt.Errorf("interface %q is not an active multicast interface (candidates: %s)", options.Interfaces, strings.Join(candidates, ", "))
+			return model.ScanOutput{}, fmt.Errorf("interface %q is not an active multicast interface (candidates: %s)", options.Interfaces, strings.Join(candidates, ", "))
 		}
 		// TCP scanning remains useful on systems without multicast (and for
 		// IPv6-only interfaces where mDNS is unavailable).
@@ -41,51 +62,51 @@ func discover(ctx context.Context, network *net.IPNet, ports []int, options Opti
 	mdnsCtx, cancelMDNS := context.WithTimeout(ctx, options.Timeout)
 	defer cancelMDNS()
 
-	results := make(chan mdnsResult, len(selected))
+	results := make(chan mdns.Result, len(selected))
 	var wg sync.WaitGroup
 	for _, iface := range selected {
 		wg.Add(1)
 		go func(iface *net.Interface) {
 			defer wg.Done()
-			if result, err := queryInterface(mdnsCtx, iface, network, options.Timeout); err == nil {
+			if result, err := mdns.QueryInterface(mdnsCtx, iface, network, options.Timeout); err == nil {
 				results <- result
 			} else if ctx.Err() == nil {
-				results <- mdnsResult{SourceIP: iface.Name, Records: nil, Err: err}
+				results <- mdns.Result{Source: iface.Name, Records: nil, Err: err}
 			}
 		}(iface)
 	}
 	wg.Wait()
 	close(results)
 
-	var responses []mdnsResult
+	var responses []mdns.Result
 	for result := range results {
 		responses = append(responses, result)
 	}
 	var mdnsErrors []string
 	for _, response := range responses {
 		if response.Err != nil {
-			mdnsErrors = append(mdnsErrors, response.SourceIP+": "+response.Err.Error())
+			mdnsErrors = append(mdnsErrors, response.Source+": "+response.Err.Error())
 		}
 	}
-	discovered := buildAssets(responses, network, ports)
+	discovered := BuildAssets(responses, ports)
 	probeCtx, cancelProbe := probeContext(ctx, options)
 	defer cancelProbe()
 	assets, err := scanNetwork(probeCtx, discovered, network, ports, options.Timeout)
 	if err != nil {
-		return ScanOutput{}, err
+		return model.ScanOutput{}, err
 	}
-	sortAssets(assets)
-	return ScanOutput{Services: assets, Answers: collectAnswers(responses), Errors: mdnsErrors}, nil
+	model.SortAssets(assets)
+	return model.ScanOutput{Services: assets, Answers: CollectAnswers(responses), Errors: mdnsErrors}, nil
 }
 
-// collectAnswers keeps only service-type PTRs. mDNS also answers PTRs for
+// CollectAnswers keeps only service-type PTRs. mDNS also answers PTRs for
 // individual instances (e.g. slw-nas._http._tcp.local); those must not be
 // reported as service types.
-func collectAnswers(responses []mdnsResult) []string {
+func CollectAnswers(responses []mdns.Result) []string {
 	answers := map[string]bool{}
 	for _, response := range responses {
 		for _, record := range response.Records {
-			if record.Type != typePTR || !isServiceType(record.Value) {
+			if record.Type != mdns.TypePTR || !mdns.IsServiceType(record.Value) {
 				continue
 			}
 			answers[record.Value] = true
@@ -96,7 +117,7 @@ func collectAnswers(responses []mdnsResult) []string {
 		answerList = append(answerList, answer)
 	}
 	sort.Slice(answerList, func(i, j int) bool {
-		ri, rj := serviceRank(serviceType(answerList[i])), serviceRank(serviceType(answerList[j]))
+		ri, rj := model.ServiceRank(mdns.ServiceType(answerList[i])), model.ServiceRank(mdns.ServiceType(answerList[j]))
 		if ri != rj {
 			return ri < rj
 		}
@@ -114,13 +135,13 @@ func probeContext(ctx context.Context, options Options) (context.Context, contex
 	return context.WithCancel(ctx)
 }
 
-func scanWithoutMDNS(ctx context.Context, network *net.IPNet, ports []int, options Options) (ScanOutput, error) {
+func scanWithoutMDNS(ctx context.Context, network *net.IPNet, ports []int, options Options) (model.ScanOutput, error) {
 	probeCtx, cancel := probeContext(ctx, options)
 	defer cancel()
 	assets, err := scanNetwork(probeCtx, nil, network, ports, options.Timeout)
 	if err != nil {
-		return ScanOutput{}, err
+		return model.ScanOutput{}, err
 	}
-	sortAssets(assets)
-	return ScanOutput{Services: assets}, nil
+	model.SortAssets(assets)
+	return model.ScanOutput{Services: assets}, nil
 }

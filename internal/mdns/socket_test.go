@@ -1,4 +1,4 @@
-package main
+package mdns
 
 import (
 	"net"
@@ -7,7 +7,7 @@ import (
 
 // When 5353 is already owned the socket must fall back to an ephemeral port
 // instead of losing mDNS discovery.
-func TestOpenMDNSSocketFallsBackWhenPortBusy(t *testing.T) {
+func TestOpenSocketFallsBackWhenPortBusy(t *testing.T) {
 	interfaces, err := net.Interfaces()
 	if err != nil {
 		t.Fatal(err)
@@ -31,7 +31,7 @@ func TestOpenMDNSSocketFallsBackWhenPortBusy(t *testing.T) {
 	defer blocker.Close()
 	busyPort := blocker.LocalAddr().(*net.UDPAddr).Port
 
-	socket, err := openMDNSSocket(iface, network, busyPort)
+	socket, err := openSocket(iface, network, busyPort)
 	if err != nil {
 		t.Fatalf("fallback failed: %v", err)
 	}

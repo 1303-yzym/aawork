@@ -1,48 +1,14 @@
-package main
+package discovery
 
 import (
 	"context"
 	"net"
-	"strings"
 	"testing"
 	"time"
+
+	"github.com/1303-yzym/mdns-go/internal/model"
+	"github.com/1303-yzym/mdns-go/internal/scan"
 )
-
-func TestEnumerateHostsSkipsIPv4NetworkAndBroadcast(t *testing.T) {
-	_, network, err := net.ParseCIDR("192.168.1.0/30")
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := enumerateHosts(network)
-	want := []string{"192.168.1.1", "192.168.1.2"}
-	if strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Fatalf("got %v, want %v", got, want)
-	}
-}
-
-func TestScanHostsCoversEveryHost(t *testing.T) {
-	_, network, err := net.ParseCIDR("192.168.1.0/30")
-	if err != nil {
-		t.Fatal(err)
-	}
-	hosts, err := scanHosts(network)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Join(hosts, ",") != "192.168.1.1,192.168.1.2" {
-		t.Fatalf("unexpected hosts: %v", hosts)
-	}
-}
-
-func TestScanHostsRejectsHugeCIDR(t *testing.T) {
-	_, network, err := net.ParseCIDR("0.0.0.0/0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := scanHosts(network); err == nil {
-		t.Fatal("expected huge CIDR to be rejected")
-	}
-}
 
 // /24 x 1-10000 is 2,540,000 targets and must be streamed, not rejected.
 func TestScanNetworkAcceptsLargeHostPortProduct(t *testing.T) {
@@ -84,7 +50,7 @@ func TestProbeContextIsIndependentOfMDNSWindow(t *testing.T) {
 	options := Options{Timeout: 300 * time.Millisecond}
 	ctx, cancel := probeContext(context.Background(), options)
 	defer cancel()
-	assets := probeAssets(ctx, []Asset{{IP: "127.0.0.1", Host: "127.0.0.1", Port: port}}, options.Timeout)
+	assets := scan.ProbeAssets(ctx, []model.Asset{{IP: "127.0.0.1", Host: "127.0.0.1", Port: port}}, options.Timeout)
 	if len(assets) != 1 {
 		t.Fatalf("open port %d was dropped, got %d assets", port, len(assets))
 	}
@@ -117,5 +83,25 @@ func TestScanNetworkStopsOnCancelledContext(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("scanNetwork did not stop after cancellation")
+	}
+}
+
+// Portless entries (device-info) bypass probing but still reach the output.
+func TestScanNetworkKeepsPortlessAssets(t *testing.T) {
+	_, network, _ := net.ParseCIDR("192.0.2.0/30")
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	assets, err := scanNetwork(ctx, []model.Asset{{IP: "192.0.2.1", Service: "device-info", Name: "nas", Port: 0}}, network, []int{9}, 10*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, asset := range assets {
+		if asset.Service == "device-info" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("device-info asset dropped: %#v", assets)
 	}
 }

@@ -1,4 +1,4 @@
-package main
+package mdns
 
 import (
 	"encoding/binary"
@@ -25,7 +25,7 @@ func buildQuery(services []string, unicast bool) []byte {
 	return packet
 }
 
-func parseDNSMessage(packet []byte) ([]dnsRecord, error) {
+func parseMessage(packet []byte) ([]Record, error) {
 	if len(packet) < 12 {
 		return nil, errors.New("short dns packet")
 	}
@@ -43,7 +43,7 @@ func parseDNSMessage(packet []byte) ([]dnsRecord, error) {
 		offset += 4
 	}
 	count := answers + authorities + additionals
-	records := make([]dnsRecord, 0, count)
+	records := make([]Record, 0, count)
 	for i := 0; i < count; i++ {
 		name, next, err := readName(packet, offset)
 		if err != nil || next+10 > len(packet) {
@@ -59,33 +59,33 @@ func parseDNSMessage(packet []byte) ([]dnsRecord, error) {
 		}
 		// Keep the on-wire case: DNS matching is case-insensitive, but the
 		// instance label is user-visible (e.g. "slw-nas(AFP)").
-		record := dnsRecord{Name: name, Type: kind, TTL: ttl}
+		record := Record{Name: name, Type: kind, TTL: ttl}
 		switch kind {
-		case typeA:
+		case TypeA:
 			if size == 4 {
 				record.Value = net.IP(packet[offset : offset+4]).String()
 			}
-		case typeAAAA:
+		case TypeAAAA:
 			if size == 16 {
 				record.Value = net.IP(packet[offset : offset+16]).String()
 			}
-		case typePTR:
+		case TypePTR:
 			record.Value, _, err = readName(packet, offset)
-		case typeSRV:
+		case TypeSRV:
 			if size >= 6 {
 				record.Port = int(binary.BigEndian.Uint16(packet[offset+4:]))
 				record.Value, _, err = readName(packet, offset+6)
 			}
-		case typeTXT:
+		case TypeTXT:
 			record.TXT = parseTXT(packet[offset : offset+size])
 		}
 		if err != nil {
 			return nil, err
 		}
-		if kind == typeTXT && record.TXT == nil {
+		if kind == TypeTXT && record.TXT == nil {
 			record.TXT = map[string]string{}
 		}
-		if kind == typeTXT || kind == typeA || kind == typeAAAA || kind == typePTR || kind == typeSRV {
+		if kind == TypeTXT || kind == TypeA || kind == TypeAAAA || kind == TypePTR || kind == TypeSRV {
 			records = append(records, record)
 		}
 		offset += size

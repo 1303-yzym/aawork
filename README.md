@@ -1,4 +1,4 @@
-# aawork
+# mDNS-go
 
 一个使用 Go 编写的 mDNS/TCP 资产发现 CLI。程序保留 mDNS 多播解析（PTR、SRV、TXT、
 A 和 AAAA），同时会对 CIDR 中的每个 IPv4/IPv6 主机和指定端口执行受控并发 TCP
@@ -6,25 +6,23 @@ A 和 AAAA），同时会对 CIDR 中的每个 IPv4/IPv6 主机和指定端口�
 
 ## 项目结构
 
-所有 `.go` 文件同属 `main` 包，按职责分文件；`main.go` 只保留进程入口，
-不含业务逻辑。测试文件按同样的边界拆分，`testdata/` 相对路径保持不变。
+代码按职责分层：`cmd/` 只做进程装配，`internal/` 每个包只承担一个关注点，
+依赖方向单向：`discovery` 依赖 `mdns`、`scan`、`model`；`render` 只依赖 `model`；
+`cli`、`mdns`、`model` 不依赖其他内部包。
 
-| 文件 | 职责 |
+| 路径 | 职责 |
 |---|---|
-| `main.go` | 进程入口：调用参数解析并映射退出码 |
-| `cli.go` | `Options`、flag 注册与校验、端口区间解析 |
-| `model.go` | 领域类型：`Asset`、`ProbeResult`、`ScanOutput`、DNS 记录等 |
-| `discovery.go` | 发现主流程：网卡选择、mDNS 窗口、TCP 扫描编排 |
-| `mdns.go` | 接口级 mDNS 查询套接字与 5353 占用回退 |
-| `dnswire.go` | DNS 报文编解码（查询构造、记录解析、名称压缩） |
-| `names.go` | 服务类型、实例名等 DNS 名称语义 |
-| `assets.go` | 把 mDNS 记录组装为资产，合并 TXT/MAC 信息 |
-| `fixture.go` | 回放录制的 mDNS 报文数据集 |
-| `scan.go` | 主机枚举、CIDR 规模校验、并发端口扫描池 |
-| `probe.go` | 单目标 TCP/TLS 探测与 banner 识别 |
-| `render.go` | 文本输出渲染 |
-| `netutil.go` | 网卡地址与 UDP 地址解析辅助函数 |
-| `util.go` | 通用小工具（去重、取首个非空值等） |
+| `cmd/mdns-go/main.go` | 进程入口：解析参数、映射退出码、选择实时扫描或数据集回放 |
+| `internal/cli` | `Options`、flag 注册与校验、端口区间解析、退出码映射 |
+| `internal/model` | 领域类型（`Asset`、`ProbeResult`、`TLSInfo`、`ScanOutput`）、排序规则、MAC 归一化 |
+| `internal/mdns` | DNS 报文编解码、服务名语义、接口级查询套接字与 5353 占用回退、报文数据集加载 |
+| `internal/scan` | 主机枚举与规模校验、并发探测池、TCP/TLS/HTTP/SMB 探测、端口到协议映射 |
+| `internal/discovery` | 发现主流程：网卡选择、mDNS 窗口、mDNS 结果组装为资产、TCP 扫描编排 |
+| `internal/render` | 文本输出渲染与 TXT 可见性规则 |
+| `testdata/` | 可回放的 mDNS 报文数据集与 golden 输出 |
+
+测试文件与被测包同目录；`testdata/` 保留在仓库根目录，因此 `internal/discovery`
+的测试通过 `../../testdata` 引用数据集，CLI 与 Docker 回放仍使用仓库根目录的相对路径。
 
 ## 验证数据集（无需真实设备）
 
@@ -39,7 +37,7 @@ A 和 AAAA），同时会对 CIDR 中的每个 IPv4/IPv6 主机和指定端口�
 离线回放：
 
 ```powershell
-go run . -cidr 192.168.1.0/24 -ports 9,445,548,5000 -fixture testdata/reference-mdns.hex
+go run ./cmd/mdns-go -cidr 192.168.1.0/24 -ports 9,445,548,5000 -fixture testdata/reference-mdns.hex
 ```
 
 输出与 `testdata/reference-expected.txt` 逐字节一致，覆盖 workstation、http、smb、
@@ -48,7 +46,7 @@ qdiscover、device-info、afpovertcp 六个服务以及全部深度字段。
 ## 使用
 
 ```powershell
-go run . -cidr 192.168.1.0/24 -ports 80,443,5000-5010
+go run ./cmd/mdns-go -cidr 192.168.1.0/24 -ports 80,443,5000-5010
 ```
 
 可选参数：
@@ -125,7 +123,7 @@ UDP 5353。程序优先在 5353 上加入多播组；若绑定失败（权限被
 ## 本地运行
 
 ```powershell
-go run . -cidr 192.168.1.0/24 -ports 80-8080
+go run ./cmd/mdns-go -cidr 192.168.1.0/24 -ports 80-8080
 ```
 
 ## Docker 部署
@@ -136,13 +134,13 @@ go run . -cidr 192.168.1.0/24 -ports 80-8080
 ### 构建
 
 ```powershell
-docker build -t aawork:local .
+docker build -t mdns-go:local .
 ```
 
 ### 运行（单次扫描）
 
 ```powershell
-docker run --rm --network host aawork:local `
+docker run --rm --network host mdns-go:local `
   -cidr 192.168.1.0/24 `
   -ports 80,443,445,548,5000 `
   -timeout 2s
@@ -153,7 +151,7 @@ docker run --rm --network host aawork:local `
 ```powershell
 $env:CIDR  = '192.168.1.0/24'
 $env:PORTS = '1-1024'
-docker compose run --rm aawork
+docker compose run --rm mdns-go
 ```
 
 可用环境变量：
@@ -175,7 +173,7 @@ docker compose --profile replay run --rm replay
 或直接挂载目录：
 
 ```powershell
-docker run --rm -v "${PWD}:/data:ro" aawork:local `
+docker run --rm -v "${PWD}:/data:ro" mdns-go:local `
   -cidr 192.168.1.0/24 -ports 9,445,548,5000 `
   -fixture /data/testdata/reference-mdns.hex
 ```

@@ -1,4 +1,4 @@
-package main
+package mdns
 
 import (
 	"bytes"
@@ -7,9 +7,9 @@ import (
 
 func TestBuildQueryContainsPTRQuestions(t *testing.T) {
 	packet := buildQuery([]string{"_http._tcp.local"}, false)
-	records, err := parseDNSMessage(append(packet, 0, 0, 0, 0, 0, 0))
+	records, err := parseMessage(append(packet, 0, 0, 0, 0, 0, 0))
 	if err != nil {
-		t.Fatalf("parseDNSMessage returned error: %v", err)
+		t.Fatalf("parseMessage returned error: %v", err)
 	}
 
 	if len(records) != 0 {
@@ -20,7 +20,7 @@ func TestBuildQueryContainsPTRQuestions(t *testing.T) {
 	}
 }
 
-func TestParseDNSMessagePreservesRecordValues(t *testing.T) {
+func TestParseMessagePreservesRecordValues(t *testing.T) {
 	packet := []byte{
 		0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0,
 		4, 'h', 'o', 's', 't', 5, 'l', 'o', 'c', 'a', 'l', 0,
@@ -32,7 +32,7 @@ func TestParseDNSMessagePreservesRecordValues(t *testing.T) {
 		0xc0, 0x0c, 0, 33, 0, 1, 0, 0, 0, 10, 0, 8,
 		0, 0, 0, 0, 0, 80, 0xc0, 0x0c,
 	}
-	records, err := parseDNSMessage(packet)
+	records, err := parseMessage(packet)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,10 +44,10 @@ func TestParseDNSMessagePreservesRecordValues(t *testing.T) {
 		value string
 		port  int
 	}{
-		{1, "192.168.1.10", 0},
-		{28, "fe80::1", 0},
-		{12, "host.local", 0},
-		{33, "host.local", 80},
+		{TypeA, "192.168.1.10", 0},
+		{TypeAAAA, "fe80::1", 0},
+		{TypePTR, "host.local", 0},
+		{TypeSRV, "host.local", 80},
 	}
 	for i, expected := range want {
 		if records[i].Type != expected.kind || records[i].Value != expected.value || records[i].Port != expected.port {
@@ -66,5 +66,30 @@ func TestBuildQueryUnicastResponseBit(t *testing.T) {
 	}
 	if unicastClass[2] != 0x80 || unicastClass[3] != 0x01 {
 		t.Fatalf("unicast class = %x, want 8001", unicastClass[2:])
+	}
+}
+
+func TestIsServiceTypeRejectsInstanceNames(t *testing.T) {
+	if !IsServiceType("_http._tcp.local") {
+		t.Error(`IsServiceType("_http._tcp.local") = false`)
+	}
+	// Instance names and the DNS-SD enumeration type are not service types.
+	for _, name := range []string{"slw-nas._http._tcp.local", "_http._tcp.example.com", "http._tcp.local", "_services._dns-sd._udp.local"} {
+		if IsServiceType(name) {
+			t.Errorf("IsServiceType(%q) = true", name)
+		}
+	}
+}
+
+func TestInstanceName(t *testing.T) {
+	got := InstanceName("slw-nas._qdiscover._tcp.local", "qdiscover")
+	if got != "slw-nas" {
+		t.Fatalf("got %q, want %q", got, "slw-nas")
+	}
+}
+
+func TestServiceType(t *testing.T) {
+	if got := ServiceType("_afpovertcp._tcp.local"); got != "afpovertcp" {
+		t.Fatalf("ServiceType = %q", got)
 	}
 }

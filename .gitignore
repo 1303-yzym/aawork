@@ -1,6 +1,6 @@
 # Build output
-/aawork.exe
-/aawork
+/mdns-go.exe
+/mdns-go
 
 # Test and coverage output
 *.test

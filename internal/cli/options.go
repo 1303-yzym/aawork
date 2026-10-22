@@ -1,4 +1,5 @@
-package main
+// Package cli parses and validates the command line.
+package cli
 
 import (
 	"errors"
@@ -7,12 +8,10 @@ import (
 	"io"
 	"net"
 	"os"
-	"sort"
-	"strconv"
-	"strings"
 	"time"
 )
 
+// Options is the validated command line.
 type Options struct {
 	CIDR        string
 	Ports       string
@@ -25,18 +24,18 @@ type Options struct {
 }
 
 var (
-	// errMissingCIDR reports a missing scan scope; the caller prints usage and
+	// ErrMissingCIDR reports a missing scan scope; the caller prints usage and
 	// exits with the conventional "bad invocation" status.
-	errMissingCIDR = errors.New("missing -cidr")
-	// errBadUsage reports a flag parse failure whose message the flag set has
+	ErrMissingCIDR = errors.New("missing -cidr")
+	// ErrBadUsage reports a flag parse failure whose message the flag set has
 	// already printed.
-	errBadUsage = errors.New("bad usage")
+	ErrBadUsage = errors.New("bad usage")
 )
 
-// parseOptions parses the command line, validates it and returns the scan
-// scope. Flag usage is written to out; validation errors are returned with the
-// same wording the CLI has always printed.
-func parseOptions(args []string, out io.Writer) (Options, *net.IPNet, []int, error) {
+// Parse parses the command line, validates it and returns the scan scope. Flag
+// usage is written to out; validation errors are returned with the same
+// wording the CLI has always printed.
+func Parse(args []string, out io.Writer) (Options, *net.IPNet, []int, error) {
 	var options Options
 	flags := flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
 	flags.SetOutput(out)
@@ -53,17 +52,17 @@ func parseOptions(args []string, out io.Writer) (Options, *net.IPNet, []int, err
 		if errors.Is(err, flag.ErrHelp) {
 			return Options{}, nil, nil, err
 		}
-		return Options{}, nil, nil, errBadUsage
+		return Options{}, nil, nil, ErrBadUsage
 	}
 	if options.CIDR == "" {
 		flags.Usage()
-		return Options{}, nil, nil, errMissingCIDR
+		return Options{}, nil, nil, ErrMissingCIDR
 	}
 	_, network, err := net.ParseCIDR(options.CIDR)
 	if err != nil {
 		return Options{}, nil, nil, fmt.Errorf("invalid cidr: %w", err)
 	}
-	ports, err := parsePorts(options.Ports)
+	ports, err := ParsePorts(options.Ports)
 	if err != nil {
 		return Options{}, nil, nil, fmt.Errorf("invalid ports: %w", err)
 	}
@@ -73,52 +72,16 @@ func parseOptions(args []string, out io.Writer) (Options, *net.IPNet, []int, err
 	return options, network, ports, nil
 }
 
-// exitOptionsError maps a parse failure to the documented exit status: 0 for
-// help, 2 for a bad invocation, 1 for invalid values.
-func exitOptionsError(err error) {
+// ExitCode maps a Parse error to the documented exit status: 0 for help, 2 for
+// a bad invocation and 1 for invalid values. Only the exit-1 errors still need
+// to be printed, because the flag set already reported usage failures.
+func ExitCode(err error) int {
 	switch {
 	case errors.Is(err, flag.ErrHelp):
-		os.Exit(0)
-	case errors.Is(err, errMissingCIDR), errors.Is(err, errBadUsage):
-		os.Exit(2)
+		return 0
+	case errors.Is(err, ErrMissingCIDR), errors.Is(err, ErrBadUsage):
+		return 2
 	default:
-		exitError("%v", err)
+		return 1
 	}
-}
-
-func parsePorts(value string) ([]int, error) {
-	seen := map[int]bool{}
-	for _, part := range strings.Split(value, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		bounds := strings.Split(part, "-")
-		if len(bounds) > 2 {
-			return nil, fmt.Errorf("invalid range %q", part)
-		}
-		start, err := strconv.Atoi(bounds[0])
-		if err != nil || start < 1 || start > 65535 {
-			return nil, fmt.Errorf("invalid port %q", part)
-		}
-		end := start
-		if len(bounds) == 2 {
-			end, err = strconv.Atoi(bounds[1])
-			if err != nil || end < start || end > 65535 {
-				return nil, fmt.Errorf("invalid range %q", part)
-			}
-		}
-		for port := start; port <= end; port++ {
-			seen[port] = true
-		}
-	}
-	ports := make([]int, 0, len(seen))
-	for port := range seen {
-		ports = append(ports, port)
-	}
-	sort.Ints(ports)
-	if len(ports) == 0 {
-		return nil, errors.New("no ports specified")
-	}
-	return ports, nil
 }

@@ -1,13 +1,13 @@
-package main
+package mdns
 
 import (
 	"strings"
 )
 
-// isServiceType reports whether name has the shape _service._tcp.local /
+// IsServiceType reports whether name has the shape _service._tcp.local /
 // _service._udp.local. Instance names and the _services enumeration pseudo
 // type are rejected.
-func isServiceType(name string) bool {
+func IsServiceType(name string) bool {
 	labels := strings.Split(strings.TrimSuffix(strings.ToLower(name), "."), ".")
 	if len(labels) != 3 {
 		return false
@@ -21,7 +21,8 @@ func isServiceType(name string) bool {
 	return labels[2] == "local"
 }
 
-func serviceType(name string) string {
+// ServiceType extracts "http" from "_http._tcp.local".
+func ServiceType(name string) string {
 	labels := strings.Split(strings.TrimSuffix(name, "."), ".")
 	for i, label := range labels {
 		if strings.EqualFold(label, "_tcp") || strings.EqualFold(label, "_udp") {
@@ -33,7 +34,9 @@ func serviceType(name string) string {
 	return "unknown"
 }
 
-func instanceName(name, service string) string {
+// InstanceName strips the service and protocol labels from an owner name,
+// leaving the user-visible instance label ("slw-nas").
+func InstanceName(name, service string) string {
 	labels := strings.Split(strings.TrimSuffix(name, "."), ".")
 	for i, label := range labels {
 		isProto := strings.EqualFold(label, "_tcp") || strings.EqualFold(label, "_udp")

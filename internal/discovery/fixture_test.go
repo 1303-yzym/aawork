@@ -1,25 +1,34 @@
-package main
+package discovery
 
 import (
-	"net"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/1303-yzym/mdns-go/internal/mdns"
+	"github.com/1303-yzym/mdns-go/internal/model"
+	"github.com/1303-yzym/mdns-go/internal/render"
+)
+
+// The recorded dataset lives at the repository root so it stays usable by the
+// CLI and the Docker replay profile.
+const (
+	referencePackets  = "../../testdata/reference-mdns.hex"
+	referenceExpected = "../../testdata/reference-expected.txt"
 )
 
 func TestOfflineMDNSFixtureAssociatesServicesAndTXT(t *testing.T) {
-	_, network, _ := net.ParseCIDR("192.168.10.0/24")
-	records := []dnsRecord{
-		{Name: "_services._dns-sd._udp.local", Type: 12, Value: "_afpovertcp._tcp.local"},
-		{Name: "nas.local", Type: 1, Value: "192.168.10.5", TTL: 120},
-		{Name: "nas.local", Type: 28, Value: "fe80::1", TTL: 120},
-		{Name: "NAS._afpovertcp._tcp.local", Type: 33, Value: "nas.local", Port: 548},
-		{Name: "NAS._afpovertcp._tcp.local", Type: 16, TXT: map[string]string{"device": "NAS", "mac": "24:5e:be:69:a3:13"}},
-		{Name: "NAS._qdiscover._tcp.local", Type: 16, TXT: map[string]string{"model": "TS-464C", "firmware": "1.0"}},
-		{Name: "_device-info._tcp.local", Type: 12, Value: "NAS(AFP)._device-info._tcp.local"},
+	records := []mdns.Record{
+		{Name: "_services._dns-sd._udp.local", Type: mdns.TypePTR, Value: "_afpovertcp._tcp.local"},
+		{Name: "nas.local", Type: mdns.TypeA, Value: "192.168.10.5", TTL: 120},
+		{Name: "nas.local", Type: mdns.TypeAAAA, Value: "fe80::1", TTL: 120},
+		{Name: "NAS._afpovertcp._tcp.local", Type: mdns.TypeSRV, Value: "nas.local", Port: 548},
+		{Name: "NAS._afpovertcp._tcp.local", Type: mdns.TypeTXT, TXT: map[string]string{"device": "NAS", "mac": "24:5e:be:69:a3:13"}},
+		{Name: "NAS._qdiscover._tcp.local", Type: mdns.TypeTXT, TXT: map[string]string{"model": "TS-464C", "firmware": "1.0"}},
+		{Name: "_device-info._tcp.local", Type: mdns.TypePTR, Value: "NAS(AFP)._device-info._tcp.local"},
 	}
-	assets := buildAssets([]mdnsResult{{Records: records}}, network, []int{548})
-	var afp Asset
+	assets := BuildAssets([]mdns.Result{{Records: records}}, []int{548})
+	var afp model.Asset
 	for _, asset := range assets {
 		if asset.Service == "afpovertcp" {
 			afp = asset
@@ -38,7 +47,7 @@ func TestOfflineMDNSFixtureAssociatesServicesAndTXT(t *testing.T) {
 		t.Fatalf("identity was not aggregated: %#v", afp)
 	}
 	var out strings.Builder
-	if err := renderText(&out, assets, []string{"_afpovertcp._tcp.local"}, true, nil); err != nil {
+	if err := render.Text(&out, assets, []string{"_afpovertcp._tcp.local"}, true, nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"548/tcp afpovertcp:", "IP=192.168.10.5", "device=NAS"} {
@@ -48,35 +57,26 @@ func TestOfflineMDNSFixtureAssociatesServicesAndTXT(t *testing.T) {
 	}
 }
 
-func loadReferenceRecords(t *testing.T) []dnsRecord {
+func loadReferenceRecords(t *testing.T) []mdns.Record {
 	t.Helper()
-	records, err := loadFixture("testdata/reference-mdns.hex")
+	records, err := mdns.LoadPacketFile(referencePackets)
 	if err != nil {
-		t.Fatalf("loadFixture: %v", err)
+		t.Fatalf("LoadPacketFile: %v", err)
 	}
 	return records
 }
 
-func referenceNetwork(t *testing.T) *net.IPNet {
-	t.Helper()
-	_, network, err := net.ParseCIDR("192.168.1.0/24")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return network
-}
-
 func TestReferenceFixtureGolden(t *testing.T) {
-	expected, err := os.ReadFile("testdata/reference-expected.txt")
+	expected, err := os.ReadFile(referenceExpected)
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := replayFixture("testdata/reference-mdns.hex", referenceNetwork(t), []int{9, 445, 548, 5000})
+	result, err := Replay(referencePackets, []int{9, 445, 548, 5000})
 	if err != nil {
 		t.Fatal(err)
 	}
 	var out strings.Builder
-	if err := renderText(&out, result.Services, result.Answers, false, nil); err != nil {
+	if err := render.Text(&out, result.Services, result.Answers, false, nil); err != nil {
 		t.Fatal(err)
 	}
 	got := strings.ReplaceAll(out.String(), "\r\n", "\n")
@@ -92,7 +92,7 @@ func TestReferenceFixtureParsesWireRecords(t *testing.T) {
 	for _, record := range records {
 		counts[record.Type]++
 	}
-	for _, kind := range []uint16{12, 33, 16, 1, 28} {
+	for _, kind := range []uint16{mdns.TypePTR, mdns.TypeSRV, mdns.TypeTXT, mdns.TypeA, mdns.TypeAAAA} {
 		if counts[kind] == 0 {
 			t.Errorf("fixture is missing record type %d", kind)
 		}
@@ -113,16 +113,16 @@ func TestReferenceFixtureParsesWireRecords(t *testing.T) {
 }
 
 func TestReferenceFixtureIgnoresUnknownFile(t *testing.T) {
-	if _, err := loadFixture("testdata/does-not-exist.hex"); err == nil {
+	if _, err := mdns.LoadPacketFile("../../testdata/does-not-exist.hex"); err == nil {
 		t.Fatal("expected error for missing fixture")
 	}
 }
 
 func TestReferenceDatasetBlockOutput(t *testing.T) {
-	responses := []mdnsResult{{Records: loadReferenceRecords(t)}}
-	assets := buildAssets(responses, referenceNetwork(t), []int{9, 445, 548, 5000})
+	responses := []mdns.Result{{Records: loadReferenceRecords(t)}}
+	assets := BuildAssets(responses, []int{9, 445, 548, 5000})
 	var out strings.Builder
-	if err := renderText(&out, assets, collectAnswers(responses), false, nil); err != nil {
+	if err := render.Text(&out, assets, CollectAnswers(responses), false, nil); err != nil {
 		t.Fatal(err)
 	}
 	got := out.String()

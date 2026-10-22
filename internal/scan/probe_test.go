@@ -1,4 +1,4 @@
-package main
+package scan
 
 import (
 	"context"
@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/1303-yzym/mdns-go/internal/model"
 )
 
 func TestProbeAssetsOmitsClosedPorts(t *testing.T) {
@@ -23,7 +25,7 @@ func TestProbeAssetsOmitsClosedPorts(t *testing.T) {
 			conn.Close()
 		}
 	}()
-	assets := probeAssets(context.Background(), []Asset{
+	assets := ProbeAssets(context.Background(), []model.Asset{
 		{IP: "127.0.0.1", Host: "127.0.0.1", Port: port},
 		{IP: "127.0.0.1", Host: "127.0.0.1", Port: 1},
 	}, 200*time.Millisecond)
@@ -33,7 +35,7 @@ func TestProbeAssetsOmitsClosedPorts(t *testing.T) {
 }
 
 func TestParseHTTPHeaders(t *testing.T) {
-	headers := parseHTTPHeaders("HTTP/1.0 200 OK\r\nServer: example\r\nContent-Length: 0\r\n")
+	headers := ParseHTTPHeaders("HTTP/1.0 200 OK\r\nServer: example\r\nContent-Length: 0\r\n")
 	if headers["Server"] != "example" || headers["Content-Length"] != "0" {
 		t.Fatalf("unexpected headers: %#v", headers)
 	}
@@ -49,8 +51,8 @@ func TestProtocolForExampleServices(t *testing.T) {
 		{"afpovertcp", 548, "afp"},
 		{"smb", 445, "smb"},
 	} {
-		if got := protocolFor(test.port, test.service); got != test.want {
-			t.Errorf("protocolFor(%q, %d) = %q, want %q", test.service, test.port, got, test.want)
+		if got := ProtocolFor(test.port, test.service); got != test.want {
+			t.Errorf("ProtocolFor(%q, %d) = %q, want %q", test.service, test.port, got, test.want)
 		}
 	}
 }
@@ -63,8 +65,8 @@ func TestHTTPSProbeNegotiatesTLS(t *testing.T) {
 	defer server.Close()
 
 	addr := server.Listener.Addr().(*net.TCPAddr)
-	asset := Asset{IP: addr.IP.String(), Host: "127.0.0.1", Port: addr.Port, Service: "https"}
-	assets := probeAssets(context.Background(), []Asset{asset}, 2*time.Second)
+	asset := model.Asset{IP: addr.IP.String(), Host: "127.0.0.1", Port: addr.Port, Service: "https"}
+	assets := ProbeAssets(context.Background(), []model.Asset{asset}, 2*time.Second)
 	if len(assets) != 1 {
 		t.Fatal("HTTPS asset was dropped")
 	}
@@ -86,10 +88,10 @@ func TestHTTPSProbeNegotiatesTLS(t *testing.T) {
 }
 
 func TestTLSServerNameSkipsIPLiterals(t *testing.T) {
-	if got := tlsServerName(&Asset{IP: "192.168.1.10"}); got != "" {
+	if got := tlsServerName(&model.Asset{IP: "192.168.1.10"}); got != "" {
 		t.Errorf("IP literal used as SNI: %q", got)
 	}
-	if got := tlsServerName(&Asset{IP: "192.168.1.10", Hostname: "nas.local"}); got != "nas.local" {
+	if got := tlsServerName(&model.Asset{IP: "192.168.1.10", Hostname: "nas.local"}); got != "nas.local" {
 		t.Errorf("hostname SNI = %q", got)
 	}
 }
