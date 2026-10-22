@@ -20,6 +20,7 @@ import (
 )
 
 const mdnsGroup = "224.0.0.251:5353"
+
 const maxScanHosts = uint64(65536)
 
 var commonServices = []string{
@@ -38,68 +39,6 @@ type Options struct {
 	Verbose     bool
 	ScanTimeout time.Duration
 	Fixture     string
-}
-
-type Asset struct {
-	IP         string            `json:"ip"`
-	Port       int               `json:"port"`
-	Host       string            `json:"host"`
-	Service    string            `json:"service,omitempty"`
-	Name       string            `json:"name,omitempty"`
-	MAC        string            `json:"mac,omitempty"`
-	Hostname   string            `json:"hostname,omitempty"`
-	IPv4       []string          `json:"ipv4,omitempty"`
-	IPv6       []string          `json:"ipv6,omitempty"`
-	TTL        uint32            `json:"ttl,omitempty"`
-	Banner     string            `json:"banner,omitempty"`
-	Probe      *ProbeResult      `json:"probe,omitempty"`
-	TXT        map[string]string `json:"txt,omitempty"`
-	Discovered bool              `json:"discovered,omitempty"`
-}
-
-type ProbeResult struct {
-	Protocol string            `json:"protocol"`
-	Status   string            `json:"status"`
-	Success  bool              `json:"success"`
-	Banner   string            `json:"banner,omitempty"`
-	Headers  map[string]string `json:"headers,omitempty"`
-	TLS      *TLSInfo          `json:"tls,omitempty"`
-}
-
-type TLSInfo struct {
-	Version    string   `json:"version,omitempty"`
-	Cipher     string   `json:"cipher,omitempty"`
-	Negotiated string   `json:"negotiated_protocol,omitempty"`
-	Subject    string   `json:"subject,omitempty"`
-	Issuer     string   `json:"issuer,omitempty"`
-	DNSNames   []string `json:"dns_names,omitempty"`
-	NotAfter   string   `json:"not_after,omitempty"`
-}
-
-type ScanOutput struct {
-	Services []Asset  `json:"services"`
-	Answers  []string `json:"answers,omitempty"`
-	Errors   []string `json:"errors,omitempty"`
-}
-
-type dnsRecord struct {
-	Name, Value string
-	Type        uint16
-	TTL         uint32
-	Port        int
-	TXT         map[string]string
-}
-
-type hostData struct {
-	hostname   string
-	ipv4, ipv6 []string
-	ttl        uint32
-}
-
-type mdnsResult struct {
-	SourceIP string
-	Records  []dnsRecord
-	Err      error
 }
 
 func main() {
@@ -642,19 +581,6 @@ func findHostByInstance(hosts map[string]*hostData, instance string) *hostData {
 	return nil
 }
 
-func mergeMaps(dst, src map[string]string) map[string]string {
-	if len(src) == 0 {
-		return dst
-	}
-	if dst == nil {
-		dst = map[string]string{}
-	}
-	for key, value := range src {
-		dst[key] = value
-	}
-	return dst
-}
-
 func scanHosts(network *net.IPNet) ([]string, error) {
 	hostCount, err := networkHostCount(network)
 	if err != nil {
@@ -988,15 +914,6 @@ func parseHTTPHeaders(banner string) map[string]string {
 		}
 	}
 	return headers
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
-	}
-	return ""
 }
 
 func parsePorts(value string) ([]int, error) {
@@ -1359,67 +1276,6 @@ func instanceName(name, service string) string {
 	return strings.TrimSuffix(name, ".")
 }
 
-func appendUnique(values []string, value string) []string {
-	for _, existing := range values {
-		if existing == value {
-			return values
-		}
-	}
-	return append(values, value)
-}
-
-func containsInt(values []int, wanted int) bool {
-	for _, value := range values {
-		if value == wanted {
-			return true
-		}
-	}
-	return false
-}
-
-func interfaceIP(iface *net.Interface, wantV6 bool) net.IP {
-	addrs, err := iface.Addrs()
-	if err != nil {
-		return nil
-	}
-	for _, addr := range addrs {
-		ipNet, ok := addr.(*net.IPNet)
-		if !ok || ipNet.IP.IsLoopback() || ipNet.IP.IsLinkLocalUnicast() {
-			continue
-		}
-		if (ipNet.IP.To4() == nil) == wantV6 {
-			return ipNet.IP
-		}
-	}
-	return nil
-}
-
-func mustResolveUDP(address string) (*net.UDPAddr, error) {
-	resolved, err := net.ResolveUDPAddr("udp4", address)
-	if err != nil || resolved == nil {
-		if err == nil {
-			err = errors.New("resolved UDP address is nil")
-		}
-		return nil, fmt.Errorf("resolve UDP address %q: %w", address, err)
-	}
-	return resolved, nil
-}
-
-func mustResolveUDPForNetwork(address string, ipv6 bool, iface *net.Interface) (*net.UDPAddr, error) {
-	if !ipv6 {
-		return mustResolveUDP(address)
-	}
-	resolved, err := net.ResolveUDPAddr("udp6", address)
-	if err != nil || resolved == nil {
-		if err == nil {
-			err = errors.New("resolved UDP address is nil")
-		}
-		return nil, fmt.Errorf("resolve UDP address %q: %w", address, err)
-	}
-	resolved.Zone = iface.Name
-	return resolved, nil
-}
-
 // sortAssets keeps the documented reference ordering: by address, then by
 // service rank (workstation, http, smb, qdiscover, device-info, afp), then
 // port. A plain port sort would move the portless device-info entry to the
@@ -1438,9 +1294,4 @@ func sortAssets(assets []Asset) {
 		}
 		return assets[i].Name < assets[j].Name
 	})
-}
-
-func exitError(format string, values ...interface{}) {
-	fmt.Fprintf(os.Stderr, format+"\n", values...)
-	os.Exit(1)
 }
